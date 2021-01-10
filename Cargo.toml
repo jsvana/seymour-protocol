@@ -3,6 +3,12 @@ name = "seymour-protocol"
 version = "0.1.0"
 authors = ["Jay Vana <jaysvana@gmail.com>"]
 edition = "2018"
+readme = "README.md"
+description = "Client protocol for the seymour gemini feed aggregator"
+repository = "https://github.com/jsvana/seymour-protocol/"
+license = "MIT"
+keywords = ["feed", "protocol"]
+categories = ["api-bindings"]
 
 [dependencies]
-thiserror = "*"
+thiserror = "1.0"
