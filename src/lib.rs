@@ -70,23 +70,9 @@ impl fmt::Display for Command {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum ParseCommandError {
-    #[error("empty command")]
-    EmptyCommand,
-    #[error("unknown command \"{0}\"")]
-    UnknownCommand(String),
-    #[error("missing argument \"{0}\"")]
-    MissingArgument(String),
-    #[error("too many arguments (expected {expected}, got {actual})")]
-    TooManyArguments { expected: usize, actual: usize },
-    #[error("invalid integer value \"{value}\" for argument \"{argument}\"")]
-    InvalidIntegerArgument { argument: String, value: String },
-}
-
-fn check_arguments(parts: &Vec<&str>, expected: usize) -> Result<(), ParseCommandError> {
+fn check_arguments(parts: &Vec<&str>, expected: usize) -> Result<(), ParseMessageError> {
     if parts.len() > expected + 1 {
-        return Err(ParseCommandError::TooManyArguments {
+        return Err(ParseMessageError::TooManyArguments {
             expected,
             actual: parts.len() - 1,
         });
@@ -95,25 +81,52 @@ fn check_arguments(parts: &Vec<&str>, expected: usize) -> Result<(), ParseComman
     Ok(())
 }
 
+fn at_position<T: FromStr>(
+    parts: &[&str],
+    argument_name: &str,
+    position: usize,
+) -> Result<T, ParseMessageError> {
+    let possible = parts
+        .get(position)
+        .ok_or_else(|| ParseMessageError::MissingArgument(argument_name.to_string()))?;
+
+    possible
+        .parse()
+        .map_err(|_| ParseMessageError::InvalidIntegerArgument {
+            argument: argument_name.to_string(),
+            value: possible.to_string(),
+        })
+}
+
+#[derive(Debug, Error)]
+pub enum ParseMessageError {
+    #[error("empty message")]
+    EmptyMessage,
+    #[error("unknown message type \"{0}\"")]
+    UnknownType(String),
+    #[error("missing argument \"{0}\"")]
+    MissingArgument(String),
+    #[error("too many arguments (expected {expected}, got {actual})")]
+    TooManyArguments { expected: usize, actual: usize },
+    #[error("invalid integer value \"{value}\" for argument \"{argument}\"")]
+    InvalidIntegerArgument { argument: String, value: String },
+}
+
 impl FromStr for Command {
-    type Err = ParseCommandError;
+    type Err = ParseMessageError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = value.split(' ').collect();
 
-        let command = parts.get(0).ok_or(ParseCommandError::EmptyCommand)?;
+        let command = parts.get(0).ok_or(ParseMessageError::EmptyMessage)?;
 
         match *command {
             "USER" => {
                 check_arguments(&parts, 1)?;
 
-                let username = parts
-                    .get(1)
-                    .ok_or_else(|| ParseCommandError::MissingArgument("username".to_string()))?;
+                let username: String = at_position(&parts, "username", 1)?;
 
-                Ok(Command::User {
-                    username: username.to_string(),
-                })
+                Ok(Command::User { username })
             }
             "LISTSUBSCRIPTIONS" => {
                 check_arguments(&parts, 0)?;
@@ -123,28 +136,14 @@ impl FromStr for Command {
             "SUBSCRIBE" => {
                 check_arguments(&parts, 1)?;
 
-                let url = parts
-                    .get(1)
-                    .ok_or_else(|| ParseCommandError::MissingArgument("url".to_string()))?;
+                let url: String = at_position(&parts, "url", 1)?;
 
-                Ok(Command::Subscribe {
-                    url: url.to_string(),
-                })
+                Ok(Command::Subscribe { url })
             }
             "UNSUBSCRIBE" => {
                 check_arguments(&parts, 1)?;
 
-                let possible_id = parts
-                    .get(1)
-                    .ok_or_else(|| ParseCommandError::MissingArgument("id".to_string()))?;
-
-                let id: i64 =
-                    possible_id
-                        .parse()
-                        .map_err(|_| ParseCommandError::InvalidIntegerArgument {
-                            argument: "id".to_string(),
-                            value: possible_id.to_string(),
-                        })?;
+                let id: i64 = at_position(&parts, "id", 1)?;
 
                 Ok(Command::Unsubscribe { id })
             }
@@ -156,21 +155,11 @@ impl FromStr for Command {
             "MARKREAD" => {
                 check_arguments(&parts, 1)?;
 
-                let possible_id = parts
-                    .get(1)
-                    .ok_or_else(|| ParseCommandError::MissingArgument("id".to_string()))?;
-
-                let id: i64 =
-                    possible_id
-                        .parse()
-                        .map_err(|_| ParseCommandError::InvalidIntegerArgument {
-                            argument: "id".to_string(),
-                            value: possible_id.to_string(),
-                        })?;
+                let id: i64 = at_position(&parts, "id", 1)?;
 
                 Ok(Command::MarkRead { id })
             }
-            _ => Err(ParseCommandError::UnknownCommand(command.to_string())),
+            _ => Err(ParseMessageError::UnknownType(command.to_string())),
         }
     }
 }
@@ -245,8 +234,8 @@ pub enum Response {
     InternalError(String),
 }
 
-impl From<ParseCommandError> for Response {
-    fn from(e: ParseCommandError) -> Response {
+impl From<ParseMessageError> for Response {
+    fn from(e: ParseMessageError) -> Response {
         Response::BadCommand(e.to_string())
     }
 }
@@ -275,6 +264,117 @@ impl fmt::Display for Response {
             Response::NeedUser(message) => write!(f, "42 {}", message),
 
             Response::InternalError(message) => write!(f, "51 {}", message),
+        }
+    }
+}
+
+impl FromStr for Response {
+    type Err = ParseMessageError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = value.split(' ').collect();
+
+        let response = parts.get(0).ok_or(ParseMessageError::EmptyMessage)?;
+
+        match *response {
+            "20" => {
+                check_arguments(&parts, 1)?;
+
+                let id: i64 = at_position(&parts, "id", 1)?;
+
+                Ok(Response::AckUser { id })
+            }
+            "21" => {
+                check_arguments(&parts, 0)?;
+
+                Ok(Response::StartSubscriptionList)
+            }
+            "22" => {
+                check_arguments(&parts, 2)?;
+
+                let id: i64 = at_position(&parts, "id", 1)?;
+                let url: String = at_position(&parts, "url", 2)?;
+
+                Ok(Response::Subscription { id, url })
+            }
+            "23" => {
+                check_arguments(&parts, 0)?;
+
+                Ok(Response::StartEntryList)
+            }
+            "24" => {
+                let trailing_start = value
+                    .find(':')
+                    .ok_or_else(|| ParseMessageError::MissingArgument("title".to_string()))?;
+
+                let initial_parts: Vec<&str> = value[..trailing_start].split(' ').collect();
+
+                let id: i64 = at_position(&initial_parts, "id", 1)?;
+                let feed_id: i64 = at_position(&initial_parts, "feed_id", 2)?;
+                let feed_url: String = at_position(&initial_parts, "feed_url", 3)?;
+                let url: String = at_position(&initial_parts, "url", 5)?;
+
+                let title = value[trailing_start + 1..].to_string();
+
+                Ok(Response::Entry {
+                    id,
+                    feed_id,
+                    feed_url,
+                    title,
+                    url,
+                })
+            }
+            "25" => {
+                check_arguments(&parts, 0)?;
+
+                Ok(Response::EndList)
+            }
+            "26" => {
+                check_arguments(&parts, 0)?;
+
+                Ok(Response::AckSubscribe)
+            }
+            "27" => {
+                check_arguments(&parts, 0)?;
+
+                Ok(Response::AckUnsubscribe)
+            }
+            "28" => {
+                check_arguments(&parts, 0)?;
+
+                Ok(Response::AckMarkRead)
+            }
+
+            "40" => {
+                check_arguments(&parts, 1)?;
+
+                let message: String = at_position(&parts, "message", 1)?;
+
+                Ok(Response::ResourceNotFound(message))
+            }
+            "41" => {
+                check_arguments(&parts, 1)?;
+
+                let message: String = at_position(&parts, "message", 1)?;
+
+                Ok(Response::BadCommand(message))
+            }
+            "42" => {
+                check_arguments(&parts, 1)?;
+
+                let message: String = at_position(&parts, "message", 1)?;
+
+                Ok(Response::NeedUser(message))
+            }
+
+            "50" => {
+                check_arguments(&parts, 1)?;
+
+                let message: String = at_position(&parts, "message", 1)?;
+
+                Ok(Response::InternalError(message))
+            }
+            _ => Err(ParseMessageError::UnknownType(response.to_string())),
         }
     }
 }
