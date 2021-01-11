@@ -314,7 +314,7 @@ impl FromStr for Response {
                 let id: i64 = at_position(&initial_parts, "id", 1)?;
                 let feed_id: i64 = at_position(&initial_parts, "feed_id", 2)?;
                 let feed_url: String = at_position(&initial_parts, "feed_url", 3)?;
-                let url: String = at_position(&initial_parts, "url", 5)?;
+                let url: String = at_position(&initial_parts, "url", 4)?;
 
                 let title = value[trailing_start + 1..].to_string();
 
