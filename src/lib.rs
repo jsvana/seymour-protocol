@@ -22,6 +22,7 @@ use thiserror::Error;
 // < 28
 
 /// Commands sent to seymour server
+#[derive(Debug)]
 pub enum Command {
     /// Select the user user
     User { username: String },
@@ -165,6 +166,7 @@ impl FromStr for Command {
 }
 
 /// Responses sent from seymour server
+#[derive(Debug)]
 pub enum Response {
     /// Acknowledgement for selecting current user
     AckUser { id: i64 },
