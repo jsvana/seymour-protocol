@@ -255,7 +255,7 @@ impl fmt::Display for Response {
                 feed_url,
                 title,
                 url,
-            } => write!(f, "24 {} {} {} {} :{}", id, feed_id, feed_url, url, title),
+            } => write!(f, "24 {} {} {} {} {}", id, feed_id, feed_url, url, title),
             Response::EndList => write!(f, "25"),
             Response::AckSubscribe => write!(f, "26"),
             Response::AckUnsubscribe => write!(f, "27"),
@@ -305,18 +305,48 @@ impl FromStr for Response {
                 Ok(Response::StartEntryList)
             }
             "24" => {
-                let trailing_start = value
-                    .find(':')
-                    .ok_or_else(|| ParseMessageError::MissingArgument("title".to_string()))?;
+                let index = value
+                    .find(' ')
+                    .ok_or_else(|| ParseMessageError::MissingArgument("code".to_string()))?;
 
-                let initial_parts: Vec<&str> = value[..trailing_start].split(' ').collect();
+                let line = &value[index + 1..];
 
-                let id: i64 = at_position(&initial_parts, "id", 1)?;
-                let feed_id: i64 = at_position(&initial_parts, "feed_id", 2)?;
-                let feed_url: String = at_position(&initial_parts, "feed_url", 3)?;
-                let url: String = at_position(&initial_parts, "url", 4)?;
+                let index = line
+                    .find(' ')
+                    .ok_or_else(|| ParseMessageError::MissingArgument("id".to_string()))?;
 
-                let title = value[trailing_start + 1..].to_string();
+                let id: i64 = line[..index].parse().map_err(|_| {
+                    ParseMessageError::InvalidIntegerArgument {
+                        argument: "id".to_string(),
+                        value: line[..index].to_string(),
+                    }
+                })?;
+
+                let line = &line[index + 1..];
+                let index = line
+                    .find(' ')
+                    .ok_or_else(|| ParseMessageError::MissingArgument("feed_id".to_string()))?;
+
+                let feed_id: i64 = line[..index].parse().map_err(|_| {
+                    ParseMessageError::InvalidIntegerArgument {
+                        argument: "feed_id".to_string(),
+                        value: line[..index].to_string(),
+                    }
+                })?;
+
+                let line = &line[index + 1..];
+                let index = line
+                    .find(' ')
+                    .ok_or_else(|| ParseMessageError::MissingArgument("feed_url".to_string()))?;
+                let feed_url = line[..index].to_string();
+
+                let line = &line[index + 1..];
+                let index = line
+                    .find(' ')
+                    .ok_or_else(|| ParseMessageError::MissingArgument("url".to_string()))?;
+                let url = line[..index].to_string();
+
+                let title = line[index + 1..].to_string();
 
                 Ok(Response::Entry {
                     id,
